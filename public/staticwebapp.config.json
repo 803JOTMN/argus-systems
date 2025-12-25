@@ -3,18 +3,17 @@
     "rewrite": "/index.html",
     "exclude": [
       "/assets/*",
-      "/*.css",
-      "/*.js",
       "/*.png",
       "/*.jpg",
+      "/*.jpeg",
+      "/*.gif",
       "/*.svg",
       "/*.ico",
-      "/wasm/*",
-      "/model.json",
-      "/group*-shard*"
+      "/manifest.webmanifest",
+      "/robots.txt"
     ]
   },
   "globalHeaders": {
-    "Permissions-Policy": "camera=(self), microphone=(self), autoplay=(self)"
+    "Permissions-Policy": "camera=(self), microphone=(), autoplay=(self)"
   }
 }
