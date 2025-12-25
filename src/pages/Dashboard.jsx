@@ -286,7 +286,8 @@ export default function Dashboard() {
                 />
                 <canvas
                   ref={canvasRef}
-                  className="w-full h-full absolute top-0 left-0"
+                  className="w-full h-full absolute top-0 left-0 z-0"
+                  style={{ background: "transparent" }}
                 />
               </>
             ) : (
