@@ -1,5 +1,12 @@
 {
   "globalHeaders": {
     "Permissions-Policy": "camera=(self), microphone=(self), autoplay=(self)"
+  },
+  "navigationFallback": {
+    "rewrite": "/index.html",
+    "exclude": [
+      "/assets/*",
+      "/*.{css,js,ico,png,jpg,jpeg,svg,webp,woff,woff2,ttf,map}"
+    ]
   }
 }
