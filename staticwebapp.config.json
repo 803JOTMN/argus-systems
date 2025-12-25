@@ -1,0 +1,5 @@
+{
+  "globalHeaders": {
+    "Permissions-Policy": "camera=(self), microphone=(self), autoplay=(self)"
+  }
+}
