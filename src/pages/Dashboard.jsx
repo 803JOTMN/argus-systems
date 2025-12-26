@@ -50,18 +50,28 @@ export default function Dashboard() {
   useEffect(() => {
     const startWebcam = async () => {
       try {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 1280, height: 720 } 
+        });
         console.log("Webcam stream obtained:", mediaStream);
+        setStream(mediaStream);
+        
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
-          videoRef.current.onloadedmetadata = () => {
-            console.log("Video metadata loaded");
-            videoRef.current.play().then(() => {
-              console.log("Video playing");
-            }).catch(err => console.error("Play error:", err));
-          };
+          
+          // Wait for video to be ready
+          await new Promise((resolve) => {
+            videoRef.current.onloadedmetadata = () => {
+              console.log("Video metadata loaded, dimensions:", 
+                videoRef.current.videoWidth, videoRef.current.videoHeight);
+              resolve();
+            };
+          });
+          
+          // Play the video
+          await videoRef.current.play();
+          console.log("Video playing successfully");
         }
-        setStream(mediaStream);
       } catch (error) {
         console.error("Failed to access webcam:", error);
       }
@@ -119,56 +129,63 @@ export default function Dashboard() {
         const cooldownMs = 5000; // 5 seconds cooldown between logs
         const requiredMissingFrames = 5; // Must be missing for 5 consecutive frames
 
+        console.log('Detection loop - Current:', Array.from(currentObjects), 'Previous:', Array.from(previousObjects));
+
         // Track if we've ever seen a bottle
         if (currentObjects.has('bottle')) {
           bottleEverSeenRef.current = true;
         }
 
-        if (previousObjects.size > 0) {
-          // Check for new objects appearing (log person detections)
-          currentObjects.forEach(obj => {
-            if (!previousObjects.has(obj) && obj === 'person') {
-              const lastLogTime = lastLogTimeRef.current[`detected_${obj}`] || 0;
-              if (now - lastLogTime < cooldownMs) return;
-
-              lastLogTimeRef.current[`detected_${obj}`] = now;
-
-              // Capture snapshot
-              const snapshotCanvas = document.createElement('canvas');
-              snapshotCanvas.width = canvas.width;
-              snapshotCanvas.height = canvas.height;
-              const snapshotCtx = snapshotCanvas.getContext('2d');
-              snapshotCtx.drawImage(video, 0, 0);
-              snapshotCtx.drawImage(canvas, 0, 0);
-              const snapshot_url = snapshotCanvas.toDataURL('image/jpeg', 0.8);
-
-              const newActivity = {
-                id: Date.now().toString(),
-                title: `Person detected`,
-                description: `A person has been detected in the camera view`,
-                type: "detection",
-                camera_name: "Main Camera",
-                created_date: new Date().toISOString(),
-                snapshot_url
-              };
-
-              const stored = JSON.parse(localStorage.getItem("activities") || "[]");
-              const updated = [newActivity, ...stored];
-              localStorage.setItem("activities", JSON.stringify(updated));
-              setActivities(updated);
+        // Check for new objects appearing (log person detections)
+        currentObjects.forEach(obj => {
+          if (!previousObjects.has(obj) && obj === 'person') {
+            console.log('New person detected!');
+            const lastLogTime = lastLogTimeRef.current[`detected_${obj}`] || 0;
+            if (now - lastLogTime < cooldownMs) {
+              console.log('Cooldown active, skipping log');
+              return;
             }
-          });
-        }
+
+            lastLogTimeRef.current[`detected_${obj}`] = now;
+
+            // Capture snapshot
+            const snapshotCanvas = document.createElement('canvas');
+            snapshotCanvas.width = canvas.width;
+            snapshotCanvas.height = canvas.height;
+            const snapshotCtx = snapshotCanvas.getContext('2d');
+            snapshotCtx.drawImage(video, 0, 0);
+            snapshotCtx.drawImage(canvas, 0, 0);
+            const snapshot_url = snapshotCanvas.toDataURL('image/jpeg', 0.8);
+
+            const newActivity = {
+              id: Date.now().toString(),
+              title: `Person detected`,
+              description: `A person has been detected in the camera view`,
+              type: "detection",
+              camera_name: "Main Camera",
+              created_date: new Date().toISOString(),
+              snapshot_url
+            };
+
+            const stored = JSON.parse(localStorage.getItem("activities") || "[]");
+            const updated = [newActivity, ...stored].slice(0, 10); // Limit to 10 activities
+            localStorage.setItem("activities", JSON.stringify(updated));
+            setActivities(updated);
+            console.log('Person detection logged!');
+          }
+        });
 
         // Check for missing bottle - if we've ever seen it and it's now gone
         if (bottleEverSeenRef.current && !currentObjects.has('bottle')) {
           // Bottle is missing in this frame
           missingCountRef.current['bottle'] = (missingCountRef.current['bottle'] || 0) + 1;
+          console.log('Bottle missing count:', missingCountRef.current['bottle']);
 
           // Only trigger alert if missing for required number of consecutive frames and under limit
-          if (missingCountRef.current['bottle'] >= requiredMissingFrames && missingAlertsCountRef.current < 10) {
+          if (missingCountRef.current['bottle'] >= requiredMissingFrames && missingAlertsCountRef.current < 5) {
             const lastLogTime = lastLogTimeRef.current['missing_bottle'] || 0;
             if (now - lastLogTime >= cooldownMs) {
+              console.log('Bottle alert triggered!');
               lastLogTimeRef.current['missing_bottle'] = now;
               missingCountRef.current['bottle'] = 0; // Reset counter
               missingAlertsCountRef.current += 1; // Increment alerts count
@@ -193,7 +210,7 @@ export default function Dashboard() {
               };
 
               const stored = JSON.parse(localStorage.getItem("activities") || "[]");
-              const updated = [newActivity, ...stored];
+              const updated = [newActivity, ...stored].slice(0, 10); // Limit to 10 activities
               localStorage.setItem("activities", JSON.stringify(updated));
               setActivities(updated);
 
@@ -286,8 +303,7 @@ export default function Dashboard() {
                 />
                 <canvas
                   ref={canvasRef}
-                  className="w-full h-full absolute top-0 left-0 z-0"
-                  style={{ background: "transparent" }}
+                  className="w-full h-full absolute top-0 left-0"
                 />
               </>
             ) : (

@@ -16,6 +16,19 @@ export default function Settings() {
   const handleSave = () => {
     const settings = { notification_email: email };
     localStorage.setItem("settings", JSON.stringify(settings));
+    
+    // Log activity
+    const newActivity = {
+      id: Date.now().toString(),
+      title: "Settings saved",
+      description: `Notification email updated to ${email}`,
+      type: "system",
+      created_date: new Date().toISOString()
+    };
+    const stored = JSON.parse(localStorage.getItem("activities") || "[]");
+    const updated = [newActivity, ...stored].slice(0, 10);
+    localStorage.setItem("activities", JSON.stringify(updated));
+    
     toast.success("Settings saved successfully");
   };
 
@@ -39,8 +52,20 @@ export default function Settings() {
       });
       
       toast.dismiss(loadingToast);
-      
+
       if (response.ok) {
+        // Log activity
+        const newActivity = {
+          id: Date.now().toString(),
+          title: "Test email sent",
+          description: `Test email sent to ${email}`,
+          type: "system",
+          created_date: new Date().toISOString()
+        };
+        const stored = JSON.parse(localStorage.getItem("activities") || "[]");
+        const updated = [newActivity, ...stored].slice(0, 10);
+        localStorage.setItem("activities", JSON.stringify(updated));
+
         toast.success("Test email sent successfully!");
         console.log("Email sent to:", email);
       } else {
