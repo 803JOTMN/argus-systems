@@ -65,22 +65,35 @@ export default function Dashboard() {
         
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
+          videoRef.current.muted = true;
+          videoRef.current.playsInline = true;
           
           // Wait for video to be ready
           await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error("Video load timeout")), 10000);
+            
             videoRef.current.onloadedmetadata = () => {
+              clearTimeout(timeout);
               console.log("Video metadata loaded, dimensions:", 
                 videoRef.current.videoWidth, videoRef.current.videoHeight);
               resolve();
             };
-            videoRef.current.onerror = () => {
+            videoRef.current.onerror = (e) => {
+              clearTimeout(timeout);
+              console.error("Video error:", e);
               reject(new Error("Video element failed to load"));
             };
           });
           
-          // Play the video
-          await videoRef.current.play();
-          console.log("Video playing successfully");
+          // Force play the video
+          try {
+            await videoRef.current.play();
+            console.log("Video playing successfully");
+          } catch (playError) {
+            console.error("Play error:", playError);
+            // Try again with user interaction
+            throw new Error("Could not start video playback: " + playError.message);
+          }
         }
       } catch (error) {
         console.error("Failed to access webcam:", error);
