@@ -95,6 +95,12 @@ export default function Dashboard() {
             console.log("Video playing successfully");
             console.log("After play - paused:", videoRef.current.paused);
             console.log("After play - readyState:", videoRef.current.readyState);
+            
+            // Extra check - wait a bit and verify video is actually playing
+            await new Promise(resolve => setTimeout(resolve, 500));
+            if (videoRef.current.paused || videoRef.current.readyState < 2) {
+              throw new Error("Video element is not playing properly");
+            }
           } catch (playError) {
             console.error("Play error:", playError);
             throw new Error("Could not start video playback: " + playError.message);
