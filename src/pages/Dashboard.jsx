@@ -259,7 +259,16 @@ export default function Dashboard() {
 
   const sendEmailAlert = async (email, objectName, snapshotUrl) => {
     console.log('Attempting to send email to:', email);
+    console.log('API Key available:', !!import.meta.env.VITE_MAILGUN_API_KEY);
+    
     try {
+      const apiKey = import.meta.env.VITE_MAILGUN_API_KEY;
+      
+      if (!apiKey) {
+        console.error('VITE_MAILGUN_API_KEY is not set - cannot send email');
+        return;
+      }
+
       const formData = new FormData();
       formData.append('from', 'Argus Systems <postmaster@argus-systems.dev>');
       formData.append('to', email);
@@ -273,14 +282,17 @@ export default function Dashboard() {
         formData.append('attachment', blob, `alert_${Date.now()}.jpg`);
       }
 
+      console.log('Sending email via Mailgun...');
       const result = await fetch('https://api.mailgun.net/v3/argus-systems.dev/messages', {
         method: 'POST',
         headers: {
-          'Authorization': 'Basic ' + btoa(`api:${import.meta.env.VITE_MAILGUN_API_KEY}`)
+          'Authorization': 'Basic ' + btoa(`api:${apiKey}`)
         },
         body: formData
       });
 
+      console.log('Email response status:', result.status);
+      
       if (result.ok) {
         console.log('Email sent successfully!');
       } else {

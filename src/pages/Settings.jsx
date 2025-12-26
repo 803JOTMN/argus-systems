@@ -34,22 +34,36 @@ export default function Settings() {
 
   const handleTestEmail = async () => {
     console.log("Test email button clicked");
+    console.log("API Key available:", !!import.meta.env.VITE_MAILGUN_API_KEY);
+    console.log("API Key value:", import.meta.env.VITE_MAILGUN_API_KEY ? "SET" : "UNDEFINED");
     const loadingToast = toast.loading("Sending test email...");
 
     try {
+      const apiKey = import.meta.env.VITE_MAILGUN_API_KEY;
+      
+      if (!apiKey) {
+        toast.dismiss(loadingToast);
+        toast.error("Mailgun API key not configured. Check your environment variables.");
+        console.error("VITE_MAILGUN_API_KEY is not set");
+        return;
+      }
+
       const formData = new FormData();
       formData.append('from', 'Argus Systems <postmaster@argus-systems.dev>');
       formData.append('to', email);
       formData.append('subject', '📧 Test Email from Argus Systems');
       formData.append('text', `This is a test email from Argus Systems.\n\nTime: ${new Date().toLocaleString()}\n\nIf you received this email, your notification settings are working correctly!`);
 
+      console.log("Sending email to:", email);
       const response = await fetch('https://api.mailgun.net/v3/argus-systems.dev/messages', {
         method: 'POST',
         headers: {
-          'Authorization': 'Basic ' + btoa(`api:${import.meta.env.VITE_MAILGUN_API_KEY}`)
+          'Authorization': 'Basic ' + btoa(`api:${apiKey}`)
         },
         body: formData
       });
+      
+      console.log("Response status:", response.status);
       
       toast.dismiss(loadingToast);
 
