@@ -47,11 +47,10 @@ export default function Dashboard() {
     loadModel();
   }, []);
 
-  // Start webcam
+  // Start webcam - get the stream
   useEffect(() => {
     const startWebcam = async () => {
       try {
-        // Check if getUserMedia is available
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
           throw new Error("Camera access is not supported in this browser");
         }
@@ -60,52 +59,8 @@ export default function Dashboard() {
           video: { width: 1280, height: 720 } 
         });
         console.log("Webcam stream obtained:", mediaStream);
-        console.log("Video tracks:", mediaStream.getVideoTracks());
-        console.log("First video track settings:", mediaStream.getVideoTracks()[0]?.getSettings());
         setStream(mediaStream);
         setWebcamError(null);
-        
-        if (videoRef.current) {
-          videoRef.current.srcObject = mediaStream;
-          videoRef.current.muted = true;
-          videoRef.current.playsInline = true;
-          
-          // Wait for video to be ready
-          await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => reject(new Error("Video load timeout")), 10000);
-            
-            videoRef.current.onloadedmetadata = () => {
-              clearTimeout(timeout);
-              console.log("Video metadata loaded, dimensions:", 
-                videoRef.current.videoWidth, videoRef.current.videoHeight);
-              console.log("Video element ready state:", videoRef.current.readyState);
-              console.log("Video paused:", videoRef.current.paused);
-              resolve();
-            };
-            videoRef.current.onerror = (e) => {
-              clearTimeout(timeout);
-              console.error("Video error:", e);
-              reject(new Error("Video element failed to load"));
-            };
-          });
-          
-          // Force play the video
-          try {
-            await videoRef.current.play();
-            console.log("Video playing successfully");
-            console.log("After play - paused:", videoRef.current.paused);
-            console.log("After play - readyState:", videoRef.current.readyState);
-            
-            // Extra check - wait a bit and verify video is actually playing
-            await new Promise(resolve => setTimeout(resolve, 500));
-            if (videoRef.current.paused || videoRef.current.readyState < 2) {
-              throw new Error("Video element is not playing properly");
-            }
-          } catch (playError) {
-            console.error("Play error:", playError);
-            throw new Error("Could not start video playback: " + playError.message);
-          }
-        }
       } catch (error) {
         console.error("Failed to access webcam:", error);
         setWebcamError(error.message || "Failed to access camera. Please check permissions.");
@@ -120,6 +75,32 @@ export default function Dashboard() {
       }
     };
   }, []);
+
+  // Setup video element when stream is available
+  useEffect(() => {
+    if (!stream || !videoRef.current) return;
+
+    console.log("Setting up video element with stream");
+
+    const video = videoRef.current;
+    video.srcObject = stream;
+    video.muted = true;
+    video.playsInline = true;
+
+    const handleLoadedMetadata = () => {
+      console.log("Video metadata loaded, dimensions:", video.videoWidth, video.videoHeight);
+      video.play().catch(err => {
+        console.error("Play error:", err);
+        setWebcamError("Could not start video playback: " + err.message);
+      });
+    };
+
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+
+    return () => {
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+    };
+  }, [stream]);
 
   // AI Detection loop
   useEffect(() => {
