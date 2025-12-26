@@ -13,6 +13,7 @@ export default function Dashboard() {
   const [activities, setActivities] = useState([]);
   const [model, setModel] = useState(null);
   const [detectedObjects, setDetectedObjects] = useState([]);
+  const [webcamError, setWebcamError] = useState(null);
   const previousObjectsRef = useRef(new Set());
   const lastLogTimeRef = useRef({});
   const missingCountRef = useRef({});
@@ -50,21 +51,30 @@ export default function Dashboard() {
   useEffect(() => {
     const startWebcam = async () => {
       try {
+        // Check if getUserMedia is available
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error("Camera access is not supported in this browser");
+        }
+
         const mediaStream = await navigator.mediaDevices.getUserMedia({ 
           video: { width: 1280, height: 720 } 
         });
         console.log("Webcam stream obtained:", mediaStream);
         setStream(mediaStream);
+        setWebcamError(null);
         
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
           
           // Wait for video to be ready
-          await new Promise((resolve) => {
+          await new Promise((resolve, reject) => {
             videoRef.current.onloadedmetadata = () => {
               console.log("Video metadata loaded, dimensions:", 
                 videoRef.current.videoWidth, videoRef.current.videoHeight);
               resolve();
+            };
+            videoRef.current.onerror = () => {
+              reject(new Error("Video element failed to load"));
             };
           });
           
@@ -74,6 +84,7 @@ export default function Dashboard() {
         }
       } catch (error) {
         console.error("Failed to access webcam:", error);
+        setWebcamError(error.message || "Failed to access camera. Please check permissions.");
       }
     };
 
@@ -292,7 +303,19 @@ export default function Dashboard() {
           </div>
           
           <div className="aspect-video bg-slate-900 rounded-lg overflow-hidden border border-slate-200 relative">
-            {stream ? (
+            {webcamError ? (
+              <div className="w-full h-full flex flex-col items-center justify-center text-rose-400 p-6 text-center">
+                <Camera className="w-16 h-16 mb-4" />
+                <p className="text-lg font-semibold mb-2">Camera Error</p>
+                <p className="text-sm text-slate-400">{webcamError}</p>
+                <button 
+                  onClick={() => window.location.reload()} 
+                  className="mt-4 px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700"
+                >
+                  Retry
+                </button>
+              </div>
+            ) : stream ? (
               <>
                 <video 
                   ref={videoRef}
