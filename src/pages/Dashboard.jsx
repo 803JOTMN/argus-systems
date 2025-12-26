@@ -60,6 +60,8 @@ export default function Dashboard() {
           video: { width: 1280, height: 720 } 
         });
         console.log("Webcam stream obtained:", mediaStream);
+        console.log("Video tracks:", mediaStream.getVideoTracks());
+        console.log("First video track settings:", mediaStream.getVideoTracks()[0]?.getSettings());
         setStream(mediaStream);
         setWebcamError(null);
         
@@ -76,6 +78,8 @@ export default function Dashboard() {
               clearTimeout(timeout);
               console.log("Video metadata loaded, dimensions:", 
                 videoRef.current.videoWidth, videoRef.current.videoHeight);
+              console.log("Video element ready state:", videoRef.current.readyState);
+              console.log("Video paused:", videoRef.current.paused);
               resolve();
             };
             videoRef.current.onerror = (e) => {
@@ -89,9 +93,10 @@ export default function Dashboard() {
           try {
             await videoRef.current.play();
             console.log("Video playing successfully");
+            console.log("After play - paused:", videoRef.current.paused);
+            console.log("After play - readyState:", videoRef.current.readyState);
           } catch (playError) {
             console.error("Play error:", playError);
-            // Try again with user interaction
             throw new Error("Could not start video playback: " + playError.message);
           }
         }
