@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { format } from "date-fns";
 import jsPDF from "jspdf";
 import { toast, Toaster } from "sonner";
+import { supabase } from "@/components/supabaseClient";
 
 export default function ActivityLogs() {
   const [activities, setActivities] = useState([]);
@@ -17,10 +18,18 @@ export default function ActivityLogs() {
   const [selectedTypes, setSelectedTypes] = useState(["detection", "alert", "system"]);
 
   useEffect(() => {
-    const stored = localStorage.getItem("activities");
-    if (stored) {
-      setActivities(JSON.parse(stored));
-    }
+    const fetchDetections = async () => {
+      const { data, error } = await supabase
+        .from('detections')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (data) {
+        setActivities(data);
+      }
+    };
+    
+    fetchDetections();
   }, []);
 
   const typeColors = {
@@ -34,7 +43,7 @@ export default function ActivityLogs() {
     
     const link = document.createElement('a');
     link.href = activity.snapshot_url;
-    link.download = `snapshot_${activity.id}_${format(new Date(activity.created_date), "yyyy-MM-dd_HH-mm-ss")}.jpg`;
+    link.download = `snapshot_${activity.id}_${format(new Date(activity.created_at), "yyyy-MM-dd_HH-mm-ss")}.jpg`;
     link.click();
   };
 
@@ -81,7 +90,7 @@ export default function ActivityLogs() {
         pdf.setFont(undefined, 'normal');
         pdf.text(`Type: ${activity.type} | Camera: ${activity.camera_name || 'N/A'}`, 20, yPosition);
         yPosition += 5;
-        pdf.text(`Time: ${format(new Date(activity.created_date), "MMM d, yyyy HH:mm:ss")}`, 20, yPosition);
+        pdf.text(`Time: ${format(new Date(activity.created_at), "MMM d, yyyy HH:mm:ss")}`, 20, yPosition);
         yPosition += 5;
         
         if (activity.description) {
@@ -227,7 +236,7 @@ export default function ActivityLogs() {
                       )}
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {format(new Date(activity.created_date), "MMM d, HH:mm:ss")}
+                        {format(new Date(activity.created_at), "MMM d, HH:mm:ss")}
                       </span>
                     </div>
                   </div>
@@ -290,7 +299,7 @@ export default function ActivityLogs() {
                   </span>
                   <span className="flex items-center gap-1">
                     <Clock className="w-4 h-4" />
-                    {format(new Date(selectedSnapshot.created_date), "MMM d, yyyy HH:mm:ss")}
+                    {format(new Date(selectedSnapshot.created_at), "MMM d, yyyy HH:mm:ss")}
                   </span>
                 </div>
                 <Button

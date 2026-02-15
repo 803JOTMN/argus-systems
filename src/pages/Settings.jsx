@@ -13,21 +13,19 @@ export default function Settings() {
     setEmail(settings.notification_email || "803jotmn@psba.edu.sg");
   }, []);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const settings = { notification_email: email };
     localStorage.setItem("settings", JSON.stringify(settings));
     
     // Log activity
-    const newActivity = {
-      id: Date.now().toString(),
-      title: "Settings saved",
-      description: `Notification email updated to ${email}`,
+    const { supabase } = await import("@/components/supabaseClient");
+    await supabase.from('activities').insert([{
+      title: "Settings updated",
+      description: `Notification email changed to ${email}`,
       type: "system",
-      created_date: new Date().toISOString()
-    };
-    const stored = JSON.parse(localStorage.getItem("activities") || "[]");
-    const updated = [newActivity, ...stored].slice(0, 10);
-    localStorage.setItem("activities", JSON.stringify(updated));
+      camera_name: null,
+      snapshot_url: null
+    }]);
     
     toast.success("Settings saved successfully");
   };
@@ -69,16 +67,14 @@ export default function Settings() {
 
       if (response.ok) {
         // Log activity
-        const newActivity = {
-          id: Date.now().toString(),
+        const { supabase } = await import("@/components/supabaseClient");
+        await supabase.from('activities').insert([{
           title: "Test email sent",
-          description: `Test email sent to ${email}`,
+          description: `Email notification test completed for ${email}`,
           type: "system",
-          created_date: new Date().toISOString()
-        };
-        const stored = JSON.parse(localStorage.getItem("activities") || "[]");
-        const updated = [newActivity, ...stored].slice(0, 10);
-        localStorage.setItem("activities", JSON.stringify(updated));
+          camera_name: null,
+          snapshot_url: null
+        }]);
 
         toast.success("Test email sent successfully!");
         console.log("Email sent to:", email);

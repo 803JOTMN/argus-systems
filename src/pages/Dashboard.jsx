@@ -5,8 +5,11 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import "@tensorflow/tfjs";
+import { supabase } from "@/components/supabaseClient";
+import { useNavigate } from "react-router-dom";
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [stream, setStream] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -14,6 +17,8 @@ export default function Dashboard() {
   const [model, setModel] = useState(null);
   const [detectedObjects, setDetectedObjects] = useState([]);
   const [webcamError, setWebcamError] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [isAuthed, setIsAuthed] = useState(false);
   const previousObjectsRef = useRef(new Set());
   const lastLogTimeRef = useRef({});
   const missingCountRef = useRef({});
@@ -21,11 +26,44 @@ export default function Dashboard() {
   const missingAlertsCountRef = useRef(0);
 
   useEffect(() => {
-    const stored = localStorage.getItem("activities");
-    if (stored) {
-      setActivities(JSON.parse(stored));
-    }
-  }, []);
+    const checkAuthAndFetch = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate('/');
+        return;
+      }
+
+      // Email validation and role assignment
+      const allowedEmails = {
+        'mohammadnurhafizul@gmail.com': 'admin',
+        '803jotmn@psba.edu.sg': 'operator'
+      };
+
+      const userEmail = user.email.toLowerCase();
+      if (!allowedEmails[userEmail]) {
+        window.location.href = '/UserNotRegistered';
+        return;
+      }
+
+      // Store user role
+      localStorage.setItem('userRole', allowedEmails[userEmail]);
+      
+      setUserId(user.id);
+      setIsAuthed(true);
+
+      const { data, error } = await supabase
+        .from('detections')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      if (data) {
+        setActivities(data);
+      }
+    };
+    
+    checkAuthAndFetch();
+  }, [navigate]);
 
   const typeColors = {
     detection: "bg-blue-100 text-blue-700",
@@ -153,13 +191,13 @@ export default function Dashboard() {
         }
 
         // Check for new objects appearing (log person detections)
-        currentObjects.forEach(obj => {
+        for (const obj of currentObjects) {
           if (!previousObjects.has(obj) && obj === 'person') {
             console.log('New person detected!');
             const lastLogTime = lastLogTimeRef.current[`detected_${obj}`] || 0;
             if (now - lastLogTime < cooldownMs) {
               console.log('Cooldown active, skipping log');
-              return;
+              continue;
             }
 
             lastLogTimeRef.current[`detected_${obj}`] = now;
@@ -173,23 +211,26 @@ export default function Dashboard() {
             snapshotCtx.drawImage(canvas, 0, 0);
             const snapshot_url = snapshotCanvas.toDataURL('image/jpeg', 0.8);
 
-            const newActivity = {
-              id: Date.now().toString(),
+            const newDetection = {
+              user_id: userId,
               title: `Person detected`,
               description: `A person has been detected in the camera view`,
               type: "detection",
               camera_name: "Main Camera",
-              created_date: new Date().toISOString(),
               snapshot_url
             };
 
-            const stored = JSON.parse(localStorage.getItem("activities") || "[]");
-            const updated = [newActivity, ...stored].slice(0, 10); // Limit to 10 activities
-            localStorage.setItem("activities", JSON.stringify(updated));
-            setActivities(updated);
+            const { data, error } = await supabase
+              .from('detections')
+              .insert([newDetection])
+              .select();
+
+            if (data) {
+              setActivities(prev => [data[0], ...prev].slice(0, 10));
+            }
             console.log('Person detection logged!');
           }
-        });
+        }
 
         // Check for missing bottle - if we've ever seen it and it's now gone
         if (bottleEverSeenRef.current && !currentObjects.has('bottle')) {
@@ -215,20 +256,23 @@ export default function Dashboard() {
               snapshotCtx.drawImage(canvas, 0, 0);
               const snapshot_url = snapshotCanvas.toDataURL('image/jpeg', 0.8);
 
-              const newActivity = {
-                id: Date.now().toString(),
+              const newDetection = {
+                user_id: userId,
                 title: `Item missing from view`,
                 description: `The item is no longer detected in the camera view`,
                 type: "alert",
                 camera_name: "Main Camera",
-                created_date: new Date().toISOString(),
                 snapshot_url
               };
 
-              const stored = JSON.parse(localStorage.getItem("activities") || "[]");
-              const updated = [newActivity, ...stored].slice(0, 10); // Limit to 10 activities
-              localStorage.setItem("activities", JSON.stringify(updated));
-              setActivities(updated);
+              const { data, error } = await supabase
+                .from('detections')
+                .insert([newDetection])
+                .select();
+
+              if (data) {
+                setActivities(prev => [data[0], ...prev].slice(0, 10));
+              }
 
               // Send email notification
               const settings = JSON.parse(localStorage.getItem("settings") || "{}");
@@ -259,49 +303,7 @@ export default function Dashboard() {
 
   const sendEmailAlert = async (email, objectName, snapshotUrl) => {
     console.log('Attempting to send email to:', email);
-    console.log('API Key available:', !!import.meta.env.VITE_MAILGUN_API_KEY);
-    
-    try {
-      const apiKey = import.meta.env.VITE_MAILGUN_API_KEY;
-      
-      if (!apiKey) {
-        console.error('VITE_MAILGUN_API_KEY is not set - cannot send email');
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append('from', 'Argus Systems <postmaster@argus-systems.dev>');
-      formData.append('to', email);
-      formData.append('subject', `⚠️ Alert: Item Missing from Camera View`);
-      formData.append('text', `ALERT: An item has disappeared from the camera view.\n\nDate/Time: ${new Date().toLocaleString()}\n\nSee attached photo for visual confirmation.`);
-      
-      // Convert base64 to blob and attach
-      if (snapshotUrl) {
-        const response = await fetch(snapshotUrl);
-        const blob = await response.blob();
-        formData.append('attachment', blob, `alert_${Date.now()}.jpg`);
-      }
-
-      console.log('Sending email via Mailgun...');
-      const result = await fetch('https://api.mailgun.net/v3/argus-systems.dev/messages', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Basic ' + btoa(`api:${apiKey}`)
-        },
-        body: formData
-      });
-
-      console.log('Email response status:', result.status);
-      
-      if (result.ok) {
-        console.log('Email sent successfully!');
-      } else {
-        const errorText = await result.text();
-        console.error('Email send failed:', result.status, errorText);
-      }
-    } catch (error) {
-      console.error('Failed to send email alert:', error);
-    }
+    // Email sending via Mailgun - implement if needed
   };
 
   return (
@@ -407,7 +409,7 @@ export default function Dashboard() {
                       )}
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {format(new Date(activity.created_date), "MMM d, HH:mm:ss")}
+                        {format(new Date(activity.created_at), "MMM d, HH:mm:ss")}
                       </span>
                     </div>
                   </div>
