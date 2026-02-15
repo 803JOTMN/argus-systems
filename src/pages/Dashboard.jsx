@@ -5,8 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import "@tensorflow/tfjs";
-import { supabase } from "@/components/supabaseClient";
-
 
 export default function Dashboard() {
   const [stream, setStream] = useState(null);
@@ -16,8 +14,6 @@ export default function Dashboard() {
   const [model, setModel] = useState(null);
   const [detectedObjects, setDetectedObjects] = useState([]);
   const [webcamError, setWebcamError] = useState(null);
-  const [userId, setUserId] = useState(null);
-  const [isAuthed, setIsAuthed] = useState(false);
   const previousObjectsRef = useRef(new Set());
   const lastLogTimeRef = useRef({});
   const missingCountRef = useRef({});
@@ -25,43 +21,10 @@ export default function Dashboard() {
   const missingAlertsCountRef = useRef(0);
 
   useEffect(() => {
-    const checkAuthAndFetch = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        window.location.href = createPageUrl('Home');
-        return;
-      }
-
-      // Email validation and role assignment
-      const allowedEmails = {
-        'mohammadnurhafizul@gmail.com': 'admin',
-        '803jotmn@psba.edu.sg': 'operator'
-      };
-
-      const userEmail = user.email.toLowerCase();
-      if (!allowedEmails[userEmail]) {
-        window.location.href = createPageUrl('UserNotRegistered');
-        return;
-      }
-
-      // Store user role
-      localStorage.setItem('userRole', allowedEmails[userEmail]);
-      
-      setUserId(user.id);
-      setIsAuthed(true);
-
-      const { data, error } = await supabase
-        .from('detections')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
-      
-      if (data) {
-        setActivities(data);
-      }
-    };
-    
-    checkAuthAndFetch();
+    const stored = localStorage.getItem("activities");
+    if (stored) {
+      setActivities(JSON.parse(stored));
+    }
   }, []);
 
   const typeColors = {
@@ -190,13 +153,13 @@ export default function Dashboard() {
         }
 
         // Check for new objects appearing (log person detections)
-        for (const obj of currentObjects) {
+        currentObjects.forEach(obj => {
           if (!previousObjects.has(obj) && obj === 'person') {
             console.log('New person detected!');
             const lastLogTime = lastLogTimeRef.current[`detected_${obj}`] || 0;
             if (now - lastLogTime < cooldownMs) {
               console.log('Cooldown active, skipping log');
-              continue;
+              return;
             }
 
             lastLogTimeRef.current[`detected_${obj}`] = now;
@@ -210,26 +173,23 @@ export default function Dashboard() {
             snapshotCtx.drawImage(canvas, 0, 0);
             const snapshot_url = snapshotCanvas.toDataURL('image/jpeg', 0.8);
 
-            const newDetection = {
-              user_id: userId,
+            const newActivity = {
+              id: Date.now().toString(),
               title: `Person detected`,
               description: `A person has been detected in the camera view`,
               type: "detection",
               camera_name: "Main Camera",
+              created_date: new Date().toISOString(),
               snapshot_url
             };
 
-            const { data, error } = await supabase
-              .from('detections')
-              .insert([newDetection])
-              .select();
-
-            if (data) {
-              setActivities(prev => [data[0], ...prev].slice(0, 10));
-            }
+            const stored = JSON.parse(localStorage.getItem("activities") || "[]");
+            const updated = [newActivity, ...stored].slice(0, 10);
+            localStorage.setItem("activities", JSON.stringify(updated));
+            setActivities(updated);
             console.log('Person detection logged!');
           }
-        }
+        });
 
         // Check for missing bottle - if we've ever seen it and it's now gone
         if (bottleEverSeenRef.current && !currentObjects.has('bottle')) {
@@ -255,23 +215,20 @@ export default function Dashboard() {
               snapshotCtx.drawImage(canvas, 0, 0);
               const snapshot_url = snapshotCanvas.toDataURL('image/jpeg', 0.8);
 
-              const newDetection = {
-                user_id: userId,
+              const newActivity = {
+                id: Date.now().toString(),
                 title: `Item missing from view`,
                 description: `The item is no longer detected in the camera view`,
                 type: "alert",
                 camera_name: "Main Camera",
+                created_date: new Date().toISOString(),
                 snapshot_url
               };
 
-              const { data, error } = await supabase
-                .from('detections')
-                .insert([newDetection])
-                .select();
-
-              if (data) {
-                setActivities(prev => [data[0], ...prev].slice(0, 10));
-              }
+              const stored = JSON.parse(localStorage.getItem("activities") || "[]");
+              const updated = [newActivity, ...stored].slice(0, 10); // Limit to 10 activities
+              localStorage.setItem("activities", JSON.stringify(updated));
+              setActivities(updated);
 
               // Send email notification
               const settings = JSON.parse(localStorage.getItem("settings") || "{}");
@@ -450,7 +407,7 @@ export default function Dashboard() {
                       )}
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {format(new Date(activity.created_at), "MMM d, HH:mm:ss")}
+                        {format(new Date(activity.created_date), "MMM d, HH:mm:ss")}
                       </span>
                     </div>
                   </div>
