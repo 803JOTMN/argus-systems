@@ -6,10 +6,9 @@ import { format } from "date-fns";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import "@tensorflow/tfjs";
 import { supabase } from "@/components/supabaseClient";
-import { useNavigate } from "react-router-dom";
+
 
 export default function Dashboard() {
-  const navigate = useNavigate();
   const [stream, setStream] = useState(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -29,7 +28,7 @@ export default function Dashboard() {
     const checkAuthAndFetch = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        navigate('/');
+        window.location.href = createPageUrl('Home');
         return;
       }
 
@@ -41,7 +40,7 @@ export default function Dashboard() {
 
       const userEmail = user.email.toLowerCase();
       if (!allowedEmails[userEmail]) {
-        window.location.href = '/UserNotRegistered';
+        window.location.href = createPageUrl('UserNotRegistered');
         return;
       }
 
@@ -63,7 +62,7 @@ export default function Dashboard() {
     };
     
     checkAuthAndFetch();
-  }, [navigate]);
+  }, []);
 
   const typeColors = {
     detection: "bg-blue-100 text-blue-700",
@@ -303,7 +302,49 @@ export default function Dashboard() {
 
   const sendEmailAlert = async (email, objectName, snapshotUrl) => {
     console.log('Attempting to send email to:', email);
-    // Email sending via Mailgun - implement if needed
+    console.log('API Key available:', !!import.meta.env.VITE_MAILGUN_API_KEY);
+    
+    try {
+      const apiKey = import.meta.env.VITE_MAILGUN_API_KEY;
+      
+      if (!apiKey) {
+        console.error('VITE_MAILGUN_API_KEY is not set - cannot send email');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('from', 'Argus Systems <postmaster@argus-systems.dev>');
+      formData.append('to', email);
+      formData.append('subject', `⚠️ Alert: Item Missing from Camera View`);
+      formData.append('text', `ALERT: An item has disappeared from the camera view.\n\nDate/Time: ${new Date().toLocaleString()}\n\nSee attached photo for visual confirmation.`);
+      
+      // Convert base64 to blob and attach
+      if (snapshotUrl) {
+        const response = await fetch(snapshotUrl);
+        const blob = await response.blob();
+        formData.append('attachment', blob, `alert_${Date.now()}.jpg`);
+      }
+
+      console.log('Sending email via Mailgun...');
+      const result = await fetch('https://api.mailgun.net/v3/argus-systems.dev/messages', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Basic ' + btoa(`api:${apiKey}`)
+        },
+        body: formData
+      });
+
+      console.log('Email response status:', result.status);
+      
+      if (result.ok) {
+        console.log('Email sent successfully!');
+      } else {
+        const errorText = await result.text();
+        console.error('Email send failed:', result.status, errorText);
+      }
+    } catch (error) {
+      console.error('Failed to send email alert:', error);
+    }
   };
 
   return (
