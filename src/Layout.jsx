@@ -1,9 +1,34 @@
 import { Link, useNavigate } from "react-router-dom";
-import { LogOut } from "lucide-react";
-import { supabase } from "@/components/supabaseClient";
+      import { LogOut } from "lucide-react";
+      import { useState, useEffect } from "react";
+      import { supabase } from "@/components/supabaseClient";
+      import UserNotRegistered from "@/pages/UserNotRegistered";
 
 export default function Layout({ children, currentPageName }) {
-  const navigate = useNavigate();
+        const navigate = useNavigate();
+        const [userRole, setUserRole] = useState(null);
+        const [isAllowed, setIsAllowed] = useState(true);
+
+        useEffect(() => {
+          const getUser = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+              const allowedEmails = ['mohammadnurhafizul@gmail.com'];
+              if (!allowedEmails.includes(user.email)) {
+                setIsAllowed(false);
+                return;
+              }
+              setIsAllowed(true);
+              const adminEmails = ['mohammadnurhafizul@gmail.com'];
+              if (adminEmails.includes(user.email)) {
+                setUserRole('Administrator');
+              } else {
+                setUserRole('user');
+              }
+            }
+          };
+          getUser();
+        }, []);
   
   const handleLogout = async () => {
           await supabase.auth.signOut();
@@ -21,6 +46,12 @@ export default function Layout({ children, currentPageName }) {
   const noLayoutPages = ["home", "usernotregistered"];
   if (noLayoutPages.includes(currentPageName?.toLowerCase())) {
     return children;
+  }
+
+  // Block unauthorized users
+  if (!isAllowed) {
+    navigate("/usernotregistered", { replace: true });
+    return null;
   }
 
   return (
@@ -48,6 +79,9 @@ export default function Layout({ children, currentPageName }) {
                 </Link>
               ))}
             </div>
+            {userRole && (
+              <span className="text-sm text-slate-600">Welcome, {userRole}</span>
+            )}
             <button 
               onClick={handleLogout}
               className="flex items-center gap-2 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-md transition-colors"

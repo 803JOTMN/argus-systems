@@ -24,12 +24,46 @@ export default function ActivityLogs() {
         .select('*')
         .order('created_at', { ascending: false });
       
-      if (data) {
+      if (error) {
+        console.error('Error fetching detections:', error);
+      } else {
         setActivities(data);
+        localStorage.setItem('activityLogs', JSON.stringify(data));
       }
     };
     
+    // Load from cache first
+    const cached = localStorage.getItem('activityLogs');
+    if (cached) {
+      try {
+        setActivities(JSON.parse(cached));
+      } catch (e) {
+        console.error('Error parsing cached activities:', e);
+      }
+    }
+    
+    // Then fetch fresh data
     fetchDetections();
+    
+    // Subscribe to real-time updates
+    const channel = supabase
+      .channel('activity-logs-realtime')
+      .on('postgres_changes', 
+        { event: 'INSERT', schema: 'public', table: 'detections' },
+        (payload) => {
+          console.log('New detection received:', payload.new);
+          setActivities(prev => {
+            const updated = [payload.new, ...prev];
+            localStorage.setItem('activityLogs', JSON.stringify(updated));
+            return updated;
+          });
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const typeColors = {

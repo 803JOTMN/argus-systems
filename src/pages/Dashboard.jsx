@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import "@tensorflow/tfjs";
+import { supabase } from "@/components/supabaseClient";
 
 export default function Dashboard() {
   const [stream, setStream] = useState(null);
@@ -14,6 +15,7 @@ export default function Dashboard() {
   const [model, setModel] = useState(null);
   const [detectedObjects, setDetectedObjects] = useState([]);
   const [webcamError, setWebcamError] = useState(null);
+  const [userId, setUserId] = useState(null);
   const previousObjectsRef = useRef(new Set());
   const lastLogTimeRef = useRef({});
   const missingCountRef = useRef({});
@@ -21,10 +23,48 @@ export default function Dashboard() {
   const missingAlertsCountRef = useRef(0);
 
   useEffect(() => {
-    const stored = localStorage.getItem("activities");
-    if (stored) {
-      setActivities(JSON.parse(stored));
-    }
+    const getUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setUserId(user.id);
+          console.log('User ID set:', user.id);
+        }
+      } catch (error) {
+        console.error('Error fetching user:', error);
+      }
+    };
+    getUser();
+  }, []);
+
+  useEffect(() => {
+    const fetchDetections = async () => {
+        const { data, error } = await supabase
+          .from('detections')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        if (error) {
+          console.error('Error fetching detections:', error);
+        } else {
+          setActivities(data);
+          localStorage.setItem('dashboardActivities', JSON.stringify(data));
+        }
+      };
+
+      // Load from cache first
+      const cached = localStorage.getItem('dashboardActivities');
+      if (cached) {
+        try {
+          setActivities(JSON.parse(cached));
+        } catch (e) {
+          console.error('Error parsing cached activities:', e);
+        }
+      }
+
+      // Then fetch fresh data
+      fetchDetections();
   }, []);
 
   const typeColors = {
@@ -142,8 +182,9 @@ export default function Dashboard() {
         const currentObjects = new Set(predictions.map(p => p.class));
         const previousObjects = previousObjectsRef.current;
         const now = Date.now();
-        const cooldownMs = 5000; // 5 seconds cooldown between logs
-        const requiredMissingFrames = 5; // Must be missing for 5 consecutive frames
+        const personCooldownMs = 2000; // 2 seconds cooldown for person detection
+        const bottleCooldownMs = 10000; // 10 seconds cooldown between bottle alerts
+        const requiredMissingFrames = 3; // Must be missing for ~0.1 seconds (3 frames at 30fps)
 
         console.log('Detection loop - Current:', Array.from(currentObjects), 'Previous:', Array.from(previousObjects));
 
@@ -152,13 +193,12 @@ export default function Dashboard() {
           bottleEverSeenRef.current = true;
         }
 
-        // Check for new objects appearing (log person detections)
+        // Log person detections continuously every 2 seconds
         currentObjects.forEach(obj => {
-          if (!previousObjects.has(obj) && obj === 'person') {
-            console.log('New person detected!');
+          if (obj === 'person' && userId) {
+            console.log('Person detected in frame');
             const lastLogTime = lastLogTimeRef.current[`detected_${obj}`] || 0;
-            if (now - lastLogTime < cooldownMs) {
-              console.log('Cooldown active, skipping log');
+            if (now - lastLogTime < personCooldownMs) {
               return;
             }
 
@@ -173,38 +213,46 @@ export default function Dashboard() {
             snapshotCtx.drawImage(canvas, 0, 0);
             const snapshot_url = snapshotCanvas.toDataURL('image/jpeg', 0.8);
 
+            // Log to Supabase
             const newActivity = {
-              id: Date.now().toString(),
               title: `Person detected`,
               description: `A person has been detected in the camera view`,
               type: "detection",
               camera_name: "Main Camera",
-              created_date: new Date().toISOString(),
-              snapshot_url
+              snapshot_url,
+              user_id: userId,
+              created_at: new Date().toISOString()
             };
-
-            const stored = JSON.parse(localStorage.getItem("activities") || "[]");
-            const updated = [newActivity, ...stored].slice(0, 10);
-            localStorage.setItem("activities", JSON.stringify(updated));
-            setActivities(updated);
-            console.log('Person detection logged!');
+            
+            supabase.from('detections').insert([newActivity]).then(({ data, error }) => {
+              if (error) {
+                console.error('Error logging person detection:', error.message, error);
+              } else {
+                console.log('Person detection logged!');
+                // Update local state and localStorage immediately
+                setActivities(prev => {
+                  const updated = [newActivity, ...prev].slice(0, 5);
+                  localStorage.setItem('dashboardActivities', JSON.stringify(updated));
+                  return updated;
+                });
+              }
+            });
           }
         });
 
         // Check for missing bottle - if we've ever seen it and it's now gone
-        if (bottleEverSeenRef.current && !currentObjects.has('bottle')) {
+        if (bottleEverSeenRef.current && !currentObjects.has('bottle') && userId) {
           // Bottle is missing in this frame
           missingCountRef.current['bottle'] = (missingCountRef.current['bottle'] || 0) + 1;
           console.log('Bottle missing count:', missingCountRef.current['bottle']);
 
-          // Only trigger alert if missing for required number of consecutive frames and under limit
-          if (missingCountRef.current['bottle'] >= requiredMissingFrames && missingAlertsCountRef.current < 5) {
+          // Only trigger alert if missing for required number of consecutive frames
+          if (missingCountRef.current['bottle'] >= requiredMissingFrames) {
             const lastLogTime = lastLogTimeRef.current['missing_bottle'] || 0;
-            if (now - lastLogTime >= cooldownMs) {
+            if (now - lastLogTime >= bottleCooldownMs) {
               console.log('Bottle alert triggered!');
               lastLogTimeRef.current['missing_bottle'] = now;
-              missingCountRef.current['bottle'] = 0; // Reset counter
-              missingAlertsCountRef.current += 1; // Increment alerts count
+              // Don't reset counter - keep it high so we can keep checking cooldown
 
               // Capture snapshot
               const snapshotCanvas = document.createElement('canvas');
@@ -215,20 +263,30 @@ export default function Dashboard() {
               snapshotCtx.drawImage(canvas, 0, 0);
               const snapshot_url = snapshotCanvas.toDataURL('image/jpeg', 0.8);
 
-              const newActivity = {
-                id: Date.now().toString(),
+              // Log to Supabase
+              const newAlert = {
                 title: `Item missing from view`,
                 description: `The item is no longer detected in the camera view`,
                 type: "alert",
                 camera_name: "Main Camera",
-                created_date: new Date().toISOString(),
-                snapshot_url
+                snapshot_url,
+                user_id: userId,
+                created_at: new Date().toISOString()
               };
-
-              const stored = JSON.parse(localStorage.getItem("activities") || "[]");
-              const updated = [newActivity, ...stored].slice(0, 10); // Limit to 10 activities
-              localStorage.setItem("activities", JSON.stringify(updated));
-              setActivities(updated);
+              
+              supabase.from('detections').insert([newAlert]).then(({ data, error }) => {
+                if (error) {
+                  console.error('Error logging item missing alert:', error.message, error);
+                } else {
+                  console.log('Item missing alert logged!');
+                  // Update local state and localStorage immediately
+                  setActivities(prev => {
+                    const updated = [newAlert, ...prev].slice(0, 5);
+                    localStorage.setItem('dashboardActivities', JSON.stringify(updated));
+                    return updated;
+                  });
+                }
+              });
 
               // Send email notification
               const settings = JSON.parse(localStorage.getItem("settings") || "{}");
@@ -255,7 +313,7 @@ export default function Dashboard() {
         cancelAnimationFrame(animationId);
       }
     };
-  }, [model, stream]);
+  }, [model, stream, userId]);
 
   const sendEmailAlert = async (email, objectName, snapshotUrl) => {
     console.log('Attempting to send email to:', email);
@@ -303,6 +361,8 @@ export default function Dashboard() {
       console.error('Failed to send email alert:', error);
     }
   };
+
+
 
   return (
     <div className="p-6">
@@ -407,7 +467,7 @@ export default function Dashboard() {
                       )}
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {format(new Date(activity.created_date), "MMM d, HH:mm:ss")}
+                        {format(new Date(activity.created_at), "MMM d, HH:mm:ss")}
                       </span>
                     </div>
                   </div>
