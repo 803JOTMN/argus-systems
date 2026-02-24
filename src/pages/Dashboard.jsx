@@ -265,8 +265,8 @@ export default function Dashboard() {
 
               // Log to Supabase
               const newAlert = {
-                title: `Item missing from view`,
-                description: `The item is no longer detected in the camera view`,
+                title: `Bottle missing from view`,
+                description: `The bottle is no longer detected in the camera view`,
                 type: "alert",
                 camera_name: "Main Camera",
                 snapshot_url,
